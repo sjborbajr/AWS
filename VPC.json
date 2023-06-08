@@ -1,711 +1,889 @@
 {
-  "Description": "KeyNameParameter is the public key that will be fed to the VM for initial user authentication.  SupernetID, SupernetCIDR, and Subnet count are used with CIDRMAP to determine the number and size of the subnets.  CountAZ is used with Mapping01.X-AZ to determine which AZ to place the subnet and the name to give the subnet. (NOTE: this template does not validate there are enough AZs in the region you are deploying, if you attmpt to build 4 AZs in a location that does not have 4 AZs, the template will fail to deploy).  VPCName and Environment will be used to tag resources and generate the VPC name. Routing will either add STNO tags or create a IGW and take care of the associated routing, or do nothing.  ElasticIP will assign the NETUTIL in the first subnet with an ElasticIP if routing is IGW.  NatGW and IGW will create a Load Balancer and routes to use the NETUTILs as NatGateways. SPOT will determine if you want SPOT instances for the NETUTILS. NETUTILA-D will controll if the NETUTILs will be built (or deleted), the default will be to put one in the first subnet of each AZ. \n\n In the CIDRMAP, the top level is the size of the supernet, the next is the number of nets that supernet will be divided into, and the last is the number of host bits, these and the supernet allow Fn::Cidr to generate the list of nets to be used.  Mapping01.AZ.ImageId is the standard Ubuntu image at the time I created this.  Mapping01.AZ.Associatewith and Mapping01.AZ.Propagateto are the names of the STNO route tables you want to associate or propigate routes with. Mapping01.Common.UserData is a base64 encoded boot script that will enable automatic patching and rebooting when needed and disables some services I do not think are needed and configures what is needed to allow it to work as a NAT gateway."
-  "Parameters": {
-    "KeyNameParameter" : {
-      "Description" : "Amazon EC2 Key Pair",
+  "Transform":"AWS::LanguageExtensions",
+  "Parameters":{
+    "KeyNameParameter":{
+      "Description":"Amazon EC2 Key Pair",
       "Default":"",
-      "AllowedPattern": "(^[A-Za-z0-9]{1,30}$|^$)",
-      "Type" : "AWS::EC2::KeyPair::KeyName"
+      "AllowedPattern":"(^[A-Za-z0-9]{1,30}$|^$)",
+      "Type":"AWS::EC2::KeyPair::KeyName"
     },
-    "SupernetID": {
-      "Description": "Subnet ID (without CIDR)",
-      "AllowedPattern": "(^[0-9.]{7,15}$|^$)",
-      "Type": "String"
+    "SupernetID":{
+      "Description":"Subnet ID (without CIDR)",
+      "AllowedPattern":"(^[0-9.]{7,15}$|^$)",
+      "Type":"String"
     },
-    "SupernetCIDR": {
-      "Type" : "String",
-      "Default" : "24",
-      "AllowedValues" : ["24", "22", "23", "25", "26"],
-      "Description" : "The CIDR for the subnet"
+    "SupernetCIDR":{
+      "Type":"String",
+      "Default":"24",
+      "AllowedValues":["24","22","23","25","26"],
+      "Description":"The CIDR for the subnet"
     },
-    "SubnetCount": {
-      "Type" : "String",
-      "Default" : "2",
-      "AllowedValues" : ["2", "4", "8"],
-      "Description" : "Enter number of subnets to create."
+    "SubnetCount":{
+      "Type":"String",
+      "Default":"2",
+      "AllowedValues":["1","2","4","8"],
+      "Description":"Enter number of subnets to create."
     },
-    "CountAZ": {
-      "Type" : "String",
-      "Default" : "2",
-      "AllowedValues" : ["1","2", "3", "4"],
-      "Description" : "Enter number of AZs to use."
+    "CountAZ":{
+      "Type":"String",
+      "Default":"2",
+      "AllowedValues":["1","2","3","4"],
+      "Description":"Enter number of AZs to use."
     },
-    "Routing" : {
-      "Type" : "String",
-      "Default" : "STNO",
-      "AllowedValues" : ["STNO", "IGW", "NONE"],
-      "Description" : "What type of routing?"
+    "Routing":{
+      "Type":"String",
+      "Default":"STNO",
+      "AllowedValues":["STNO","IGW","NONE"],
+      "Description":"What type of routing?"
     },
-    "ElasticIP" : {
-      "Type" : "String",
-      "Default" : "YES",
-      "AllowedValues" : ["YES", "NO"],
-      "Description" : "Do you want an Elastic IP with the netutil if you have an IGW?"
+    "ElasticIP":{
+      "Type":"String",
+      "Default":"YES",
+      "AllowedValues":["YES","NO"],
+      "Description":"Do you want an Elastic IP with the netutil if you have an IGW?"
     },
-    "NatGW" : {
-      "Type" : "String",
-      "Default" : "DEFAULT",
-      "AllowedValues" : ["DEFAULT", "YES", "NO"],
-      "Description" : "Do you want to use the NETUTILs as NAT Gateways?"
+    "SPOT":{
+      "Type":"String",
+      "Default":"YES",
+      "AllowedValues":["YES","NO"],
+      "Description":"Create NETUTILs as Spots?"
     },
-    "SPOT" : {
-      "Type" : "String",
-      "Default" : "YES",
-      "AllowedValues" : ["YES", "NO"],
-      "Description" : "Create NETUTILs as Spots?"
+    "NETUTILA":{
+      "Type":"String",
+      "Default":"DEFAULT",
+      "AllowedValues":["YES","NO","DEFAULT"],
+      "Description":"Create NETUTILA?"
     },
-    "NETUTILA" : {
-      "Type" : "String",
-      "Default" : "DEFAULT",
-      "AllowedValues" : ["YES", "NO", "DEFAULT"],
-      "Description" : "Create NETUTILA?"
+    "NETUTILB":{
+      "Type":"String",
+      "Default":"DEFAULT",
+      "AllowedValues":["YES","NO","DEFAULT"],
+      "Description":"Create NETUTILB?"
     },
-    "NETUTILB" : {
-      "Type" : "String",
-      "Default" : "DEFAULT",
-      "AllowedValues" : ["YES", "NO", "DEFAULT"],
-      "Description" : "Create NETUTILB?"
+    "NETUTILC":{
+      "Type":"String",
+      "Default":"DEFAULT",
+      "AllowedValues":["YES","NO","DEFAULT"],
+      "Description":"Create NETUTILB?"
     },
-    "NETUTILC" : {
-      "Type" : "String",
-      "Default" : "DEFAULT",
-      "AllowedValues" : ["YES", "NO", "DEFAULT"],
-      "Description" : "Create NETUTILB?"
+    "NETUTILD":{
+      "Type":"String",
+      "Default":"DEFAULT",
+      "AllowedValues":["YES","NO","DEFAULT"],
+      "Description":"Create NETUTILB?"
     },
-    "NETUTILD" : {
-      "Type" : "String",
-      "Default" : "DEFAULT",
-      "AllowedValues" : ["YES", "NO", "DEFAULT"],
-      "Description" : "Create NETUTILB?"
-    },
-    "VPCName": {
-      "Description": "VPC Name",
-      "Type": "String",
-      "AllowedPattern": "^[A-Z1-9-]{3,20}$",
+    "VPCName":{
+      "Description":"VPC Name",
+      "Type":"String",
+      "AllowedPattern":"^[A-Z1-9-]{3,20}$",
       "ConstraintDescription":"Must be upper case or numbers between 3 and 20 chars"
     },
-    "Environment" : {
-      "Type" : "String",
-      "Default" : "PROD",
-      "AllowedValues" : ["PROD", "PREPROD", "TEST", "DEV", "PP", "PUBLIC"],
-      "Description" : "Choose Environment tag."
+    "Environment":{
+      "Type":"String",
+      "Default":"PROD",
+      "AllowedValues":["PROD","PREPROD","TEST","DEV","PP","PUBLIC"],
+      "Description":"Choose Environment tag."
     }
   },
-  "Mappings" : {
-    "Mapping01" : {
-      "us-west-1" : {
+  "Mappings":{
+    "Mapping01":{
+      "us-west-1":{
         "ImageId"                         : "ami-0d382e80be7ffdae5",
         "Associatewith"                   : "STNO-NAME",
         "Propagateto"                     : "STNO-NAME"
       },
-      "us-east-1" : {
+      "us-east-1":{
         "ImageId"                         : "ami-053b0d53c279acc90",
         "Associatewith"                   : "STNO-NAME",
         "Propagateto"                     : "STNO-NAME"
       },
-      "us-west-2" : {
+      "us-west-2":{
         "ImageId"                         : "ami-036d46416a34a611c",
         "Associatewith"                   : "STNO-NAME",
         "Propagateto"                     : "STNO-NAME"
       },
-      "Common" : {
-        "UserData" : "IyEvYmluL2Jhc2gNCnN1ZG8gc2VkIC1FICdzXy8vKC4qKS11cGRhdGVzIjtfXDEtdXBkYXRlcyI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvRml4SW50ZXJydXB0ZWREcGtnICJ0cnVlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvRml4SW50ZXJydXB0ZWREcGtnICJ0cnVlIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0Kc3VkbyBzZWQgJ3NfLy9VbmF0dGVuZGVkLVVwZ3JhZGU6OlJlbW92ZS1VbnVzZWQtS2VybmVsLVBhY2thZ2VzICJ0cnVlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpSZW1vdmUtVW51c2VkLUtlcm5lbC1QYWNrYWdlcyAidHJ1ZSI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpSZW1vdmUtTmV3LVVudXNlZC1EZXBlbmRlbmNpZXMgInRydWUiO19VbmF0dGVuZGVkLVVwZ3JhZGU6OlJlbW92ZS1OZXctVW51c2VkLURlcGVuZGVuY2llcyAidHJ1ZSI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpSZW1vdmUtVW51c2VkLURlcGVuZGVuY2llcyAiZmFsc2UiO19VbmF0dGVuZGVkLVVwZ3JhZGU6OlJlbW92ZS1VbnVzZWQtRGVwZW5kZW5jaWVzICJ0cnVlIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0Kc3VkbyBzZWQgJ3NfLy9VbmF0dGVuZGVkLVVwZ3JhZGU6OkF1dG9tYXRpYy1SZWJvb3QgImZhbHNlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290ICJ0cnVlIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0Kc3VkbyBzZWQgJ3NfLy9VbmF0dGVuZGVkLVVwZ3JhZGU6OkF1dG9tYXRpYy1SZWJvb3QtV2l0aFVzZXJzICJ0cnVlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290LVdpdGhVc2VycyAidHJ1ZSI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290LVRpbWUgIjAyOjAwIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290LVRpbWUgIjAyOjAwIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0KDQpzdWRvIHJtIC9ldGMvdXBkYXRlLW1vdGQuZC8xMC1oZWxwLXRleHQgL2V0Yy91cGRhdGUtbW90ZC5kLzUwLW1vdGQtbmV3cyAvZXRjL3VwZGF0ZS1tb3RkLmQvOTEtcmVsZWFzZS11cGdyYWRlDQoNClRIRVNFPSdtdWx0aXBhdGhkLnNlcnZpY2UgYXRkLnNlcnZpY2UgZnd1cGQuc2VydmljZSBmd3VwZC1yZWZyZXNoLnNlcnZpY2UgdXBvd2VyLnNlcnZpY2UgdWRpc2tzMi5zZXJ2aWNlIG1vdGQtbmV3cy5zZXJ2aWNlJw0KZm9yIFNlcnZpY2UgaW4gJFRIRVNFOyBkbyBzdWRvIHN5c3RlbWN0bCBzdG9wICRTZXJ2aWNlOyBzdWRvIHN5c3RlbWN0bCBkaXNhYmxlICRTZXJ2aWNlOyBkb25lDQoNCnN1ZG8gdGltZWRhdGVjdGwgc2V0LXRpbWV6b25lIEFtZXJpY2EvTG9zX0FuZ2VsZXMNCg0Kc3VkbyBhcHQgLXkgdXBkYXRlICYmIHN1ZG8gYXB0IC15IGRpc3QtdXBncmFkZQ0K",
-        "InstanceType" : "t3a.nano"
+      "Common":{
+        "UserData":"IyEvYmluL2Jhc2gNCnN1ZG8gc2VkIC1FICdzXy8vKC4qKS11cGRhdGVzIjtfXDEtdXBkYXRlcyI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvRml4SW50ZXJydXB0ZWREcGtnICJ0cnVlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvRml4SW50ZXJydXB0ZWREcGtnICJ0cnVlIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0Kc3VkbyBzZWQgJ3NfLy9VbmF0dGVuZGVkLVVwZ3JhZGU6OlJlbW92ZS1VbnVzZWQtS2VybmVsLVBhY2thZ2VzICJ0cnVlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpSZW1vdmUtVW51c2VkLUtlcm5lbC1QYWNrYWdlcyAidHJ1ZSI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpSZW1vdmUtTmV3LVVudXNlZC1EZXBlbmRlbmNpZXMgInRydWUiO19VbmF0dGVuZGVkLVVwZ3JhZGU6OlJlbW92ZS1OZXctVW51c2VkLURlcGVuZGVuY2llcyAidHJ1ZSI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpSZW1vdmUtVW51c2VkLURlcGVuZGVuY2llcyAiZmFsc2UiO19VbmF0dGVuZGVkLVVwZ3JhZGU6OlJlbW92ZS1VbnVzZWQtRGVwZW5kZW5jaWVzICJ0cnVlIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0Kc3VkbyBzZWQgJ3NfLy9VbmF0dGVuZGVkLVVwZ3JhZGU6OkF1dG9tYXRpYy1SZWJvb3QgImZhbHNlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290ICJ0cnVlIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0Kc3VkbyBzZWQgJ3NfLy9VbmF0dGVuZGVkLVVwZ3JhZGU6OkF1dG9tYXRpYy1SZWJvb3QtV2l0aFVzZXJzICJ0cnVlIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290LVdpdGhVc2VycyAidHJ1ZSI7XycgL2V0Yy9hcHQvYXB0LmNvbmYuZC81MHVuYXR0ZW5kZWQtdXBncmFkZXMgLWkNCnN1ZG8gc2VkICdzXy8vVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290LVRpbWUgIjAyOjAwIjtfVW5hdHRlbmRlZC1VcGdyYWRlOjpBdXRvbWF0aWMtUmVib290LVRpbWUgIjAyOjAwIjtfJyAvZXRjL2FwdC9hcHQuY29uZi5kLzUwdW5hdHRlbmRlZC11cGdyYWRlcyAtaQ0KDQpzdWRvIHJtIC9ldGMvdXBkYXRlLW1vdGQuZC8xMC1oZWxwLXRleHQgL2V0Yy91cGRhdGUtbW90ZC5kLzUwLW1vdGQtbmV3cyAvZXRjL3VwZGF0ZS1tb3RkLmQvOTEtcmVsZWFzZS11cGdyYWRlDQoNClRIRVNFPSdtdWx0aXBhdGhkLnNlcnZpY2UgYXRkLnNlcnZpY2UgZnd1cGQuc2VydmljZSBmd3VwZC1yZWZyZXNoLnNlcnZpY2UgdXBvd2VyLnNlcnZpY2UgdWRpc2tzMi5zZXJ2aWNlIG1vdGQtbmV3cy5zZXJ2aWNlJw0KZm9yIFNlcnZpY2UgaW4gJFRIRVNFOyBkbyBzdWRvIHN5c3RlbWN0bCBzdG9wICRTZXJ2aWNlOyBzdWRvIHN5c3RlbWN0bCBkaXNhYmxlICRTZXJ2aWNlOyBkb25lDQoNCnN1ZG8gdGltZWRhdGVjdGwgc2V0LXRpbWV6b25lIEFtZXJpY2EvTG9zX0FuZ2VsZXMNCg0Kc3VkbyBhcHQgLXkgdXBkYXRlICYmIHN1ZG8gYXB0IC15IGRpc3QtdXBncmFkZQ0K",
+        "InstanceType":"t3a.nano"
       },
-      "1-AZ" : {
-        "Subnet0": 0,
-        "Subnet1": 0,
-        "Subnet2": 0,
-        "Subnet3": 0,
-        "Subnet4": 0,
-        "Subnet5": 0,
-        "Subnet6": 0,
-        "Subnet7": 0,
-        "Subnet0-Name-STNO": "Private1",
-        "Subnet1-Name-STNO": "Private2",
-        "Subnet2-Name-STNO": "Private3",
-        "Subnet3-Name-STNO": "Private4",
-        "Subnet4-Name-STNO": "Private5",
-        "Subnet5-Name-STNO": "Private6",
-        "Subnet6-Name-STNO": "Private7",
-        "Subnet7-Name-STNO": "Private8",
-        "Subnet0-Name-IGW":  "Public",
-        "Subnet1-Name-IGW":  "Private",
-        "Subnet2-Name-IGW":  "Private2",
-        "Subnet3-Name-IGW":  "Private3",
-        "Subnet4-Name-IGW":  "Private4",
-        "Subnet5-Name-IGW":  "Private5",
-        "Subnet6-Name-IGW":  "Private6",
-        "Subnet7-Name-IGW":  "Private7",
-        "Subnet0-Name-NONE": "Private1",
-        "Subnet1-Name-NONE": "Private2",
-        "Subnet2-Name-NONE": "Private3",
-        "Subnet3-Name-NONE": "Private4",
-        "Subnet4-Name-NONE": "Private5",
-        "Subnet5-Name-NONE": "Private6",
-        "Subnet6-Name-NONE": "Private7",
-        "Subnet7-Name-NONE": "Private8"
+      "Subnet1":{
+        "Description":"1st subnet",
+        "1az":0,
+        "2az":0,
+        "3az":0,
+        "4az":0,
+        "1azNameIGW":"Public",
+
+        "1azNameSTNO":"Private",
+        "1azNameNONE":"Private",
+
+        "2azNameIGW":"PublicA",
+        "3azNameIGW":"PublicA",
+        "4azNameIGW":"PublicA",
+
+        "2azNameSTNO":"PrivateA",
+        "3azNameSTNO":"PrivateA",
+        "4azNameSTNO":"PrivateA",
+        "2azNameNONE":"PrivateA",
+        "3azNameNONE":"PrivateA",
+        "4azNameNONE":"PrivateA"
       },
-      "2-AZ" : {
-        "Subnet0": 0,
-        "Subnet1": 1,
-        "Subnet2": 0,
-        "Subnet3": 1,
-        "Subnet4": 0,
-        "Subnet5": 1,
-        "Subnet6": 0,
-        "Subnet7": 1,
-        "Subnet0-Name-STNO": "PrivateA",
-        "Subnet1-Name-STNO": "PrivateB",
-        "Subnet2-Name-STNO": "Private2A",
-        "Subnet3-Name-STNO": "Private2B",
-        "Subnet4-Name-STNO": "Private3A",
-        "Subnet5-Name-STNO": "Private3B",
-        "Subnet6-Name-STNO": "Private4A",
-        "Subnet7-Name-STNO": "Private4B",
-        "Subnet0-Name-IGW":  "PublicA",
-        "Subnet1-Name-IGW":  "PublicB",
-        "Subnet2-Name-IGW":  "PrivateA",
-        "Subnet3-Name-IGW":  "PrivateB",
-        "Subnet4-Name-IGW":  "Private2A",
-        "Subnet5-Name-IGW":  "Private2B",
-        "Subnet6-Name-IGW":  "Private3A",
-        "Subnet7-Name-IGW":  "Private3B",
-        "Subnet0-Name-NONE": "PrivateA",
-        "Subnet1-Name-NONE": "PrivateB",
-        "Subnet2-Name-NONE": "Private2A",
-        "Subnet3-Name-NONE": "Private2B",
-        "Subnet4-Name-NONE": "Private3A",
-        "Subnet5-Name-NONE": "Private3B",
-        "Subnet6-Name-NONE": "Private4A",
-        "Subnet7-Name-NONE": "Private4B"
+      "Subnet2":{
+        "Description":"2nd subnet",
+        "1az":0,
+        "2az":1,
+        "3az":1,
+        "4az":1,
+        "1azNameIGW":"Private",
+
+        "2azNameIGW":"PublicB",
+        "3azNameIGW":"PublicB",
+        "4azNameIGW":"PublicB",
+
+        "2azNameSTNO":"PrivateB",
+        "3azNameSTNO":"PrivateB",
+        "4azNameSTNO":"PrivateB",
+        "2azNameNONE":"PrivateB",
+        "3azNameNONE":"PrivateB",
+        "4azNameNONE":"PrivateB",
+
+        "1azNameSTNO":"Private2",
+        "1azNameNONE":"Private2"
       },
-      "3-AZ" : {
-        "Subnet0": 0,
-        "Subnet1": 1,
-        "Subnet2": 2,
-        "Subnet4": 0,
-        "Subnet5": 1,
-        "Subnet6": 2,
-        "Subnet0-Name-STNO": "PrivateA",
-        "Subnet1-Name-STNO": "PrivateB",
-        "Subnet2-Name-STNO": "PrivateC",
-        "Subnet4-Name-STNO": "Private2A",
-        "Subnet5-Name-STNO": "Private2B",
-        "Subnet6-Name-STNO": "Private2C",
-        "Subnet0-Name-IGW":  "PublicA",
-        "Subnet1-Name-IGW":  "PublicB",
-        "Subnet2-Name-IGW":  "PublicC",
-        "Subnet4-Name-IGW":  "PrivateA",
-        "Subnet5-Name-IGW":  "PrivateB",
-        "Subnet6-Name-IGW":  "PrivateC",
-        "Subnet0-Name-NONE": "PrivateA",
-        "Subnet1-Name-NONE": "PrivateB",
-        "Subnet2-Name-NONE": "PrivateC",
-        "Subnet4-Name-NONE": "Private2A",
-        "Subnet5-Name-NONE": "Private2B",
-        "Subnet6-Name-NONE": "Private2C"
+      "Subnet3":{
+        "Description":"3rd subnet, makes sence with 3 or 4 AZs, or two with IGW",
+        "1az":0,
+        "2az":0,
+        "3az":2,
+        "4az":2,
+        "3azNameIGW":"PublicC",
+        "4azNameIGW":"PublicC",
+
+        "2azNameIGW":"PrivateA",
+
+        "3azNameSTNO":"PrivateC",
+        "4azNameSTNO":"PrivateC",
+        "3azNameNONE":"PrivateC",
+        "4azNameNONE":"PrivateC",
+
+        "2azNameSTNO":"Private2A",
+        "2azNameNONE":"Private2A",
+
+        "1azNameIGW":"Private2",
+
+        "1azNameSTNO":"Private3",
+        "1azNameNONE":"Private3"
       },
-      "4-AZ" : {
-        "Subnet0": 0,
-        "Subnet1": 1,
-        "Subnet2": 2,
-        "Subnet3": 3,
-        "Subnet4": 0,
-        "Subnet5": 1,
-        "Subnet6": 2,
-        "Subnet7": 3,
-        "Subnet0-Name-STNO": "PrivateA",
-        "Subnet1-Name-STNO": "PrivateB",
-        "Subnet2-Name-STNO": "PrivateC",
-        "Subnet3-Name-STNO": "PrivateD",
-        "Subnet4-Name-STNO": "Private2A",
-        "Subnet5-Name-STNO": "Private2B",
-        "Subnet6-Name-STNO": "Private2C",
-        "Subnet7-Name-STNO": "Private2D",
-        "Subnet0-Name-IGW":  "PublicA",
-        "Subnet1-Name-IGW":  "PublicB",
-        "Subnet2-Name-IGW":  "PublicC",
-        "Subnet3-Name-IGW":  "PublicD",
-        "Subnet4-Name-IGW":  "PrivateA",
-        "Subnet5-Name-IGW":  "PrivateB",
-        "Subnet6-Name-IGW":  "PrivateC",
-        "Subnet7-Name-IGW":  "PrivateD",
-        "Subnet0-Name-NONE": "PrivateA",
-        "Subnet1-Name-NONE": "PrivateB",
-        "Subnet2-Name-NONE": "PrivateC",
-        "Subnet3-Name-NONE": "PrivateD",
-        "Subnet4-Name-NONE": "Private2A",
-        "Subnet5-Name-NONE": "Private2B",
-        "Subnet6-Name-NONE": "Private2C",
-        "Subnet7-Name-NONE": "Private2D"
+      "Subnet4":{
+        "Description":"4th subnet, doesnt make when 3 AZs, makes sence with 4 AZs or 2 with IGW",
+        "1az":0,
+        "2az":1,
+        "3az":3,
+        "4az":3,
+        "4azNameIGW":"PublicD",
+
+        "2azNameIGW":"PrivateB",
+
+        "4azNameSTNO":"PrivateD",
+        "4azNameNONE":"PrivateD",
+
+
+        "2azNameSTNO":"Private2B",
+        "2azNameNONE":"Private2B",
+
+        "1azNameIGW":"Private3",
+
+        "3azNameIGW" :"NonSence",
+        "3azNameSTNO":"NonSence",
+        "3azNameNONE":"NonSence",
+        "1azNameSTNO":"Private4",
+        "1azNameNONE":"Private4"
+      },
+      "Subnet5":{
+        "Description":"5th subnet, only makes sence with 3 or 4 AZs and IGW",
+        "1az":0,
+        "2az":0,
+        "3az":0,
+        "4az":0,
+        "4azNameIGW":"PrivateA",
+        "3azNameIGW":"PrivateA",
+
+        "2azNameIGW":"Private2A",
+
+        "2azNameSTNO":"Private3A",
+        "2azNameNONE":"Private3A",
+
+        "3azNameSTNO":"Private2A",
+        "3azNameNONE":"Private2A",
+        "4azNameSTNO":"Private2A",
+        "4azNameNONE":"Private2A",
+
+        "1azNameIGW":"Private4",
+
+        "1azNameNONE":"Private5",
+        "1azNameSTNO":"Private5"
+      },
+      "Subnet6":{
+        "Description":"6th subnet, only makes sence with 3 or 4 AZs and IGW",
+        "1az":0,
+        "2az":1,
+        "3az":1,
+        "4az":1,
+        "3azNameIGW":"PrivateB",
+        "4azNameIGW":"PrivateB",
+
+        "2azNameIGW":"Private2B",
+
+        "2azNameSTNO":"Private3B",
+        "2azNameNONE":"Private3B",
+        
+        "3azNameSTNO":"Private2B",
+        "3azNameNONE":"Private2B",
+        "4azNameSTNO":"Private2B",
+        "4azNameNONE":"Private2B",
+
+        "1azNameIGW":"Private5",
+        
+        "1azNameSTNO":"Private6",
+        "1azNameNONE":"Private6"
+      },
+      "Subnet7":{
+        "Description":"7th subnet, only makes sence with 3 or 4 AZs and IGW",
+        "1az":0,
+        "2az":0,
+        "3az":2,
+        "4az":2,
+        "3azNameIGW":"PrivateC",
+        "4azNameIGW":"PrivateC",
+
+        "2azNameIGW":"Private3A",
+
+        "2azNameSTNO":"Private4A",
+        "2azNameNONE":"Private4A",
+
+        "3azNameSTNO":"Private2C",
+        "3azNameNONE":"Private2C",
+        "4azNameSTNO":"Private2C",
+        "4azNameNONE":"Private2C",
+
+        "1azNameIGW":"Private6",
+
+        "1azNameSTNO":"Private7",
+        "1azNameNONE":"Private7"
+      },
+      "Subnet8":{
+        "Description":"8th subnet, doesn't make with 3 az, only makes sence with 4 AZs and IGW",
+        "1az":0,
+        "2az":1,
+        "3az":3,
+        "4az":3,
+        "4azNameIGW":"PrivateD",
+
+        "2azNameIGW":"Private3B",
+
+        "2azNameSTNO":"Private4B",
+        "2azNameNONE":"Private4B",
+
+        "4azNameSTNO":"Private2D",
+        "4azNameNONE":"Private2D",
+
+        "1azNameIGW":"Private7",
+
+        "3azNameIGW" :"NonSence",
+        "3azNameSTNO":"NonSence",
+        "3azNameNONE":"NonSence",
+        "1azNameSTNO":"Private8",
+        "1azNameNONE":"Private8"
       }
     },
-    "CIDRMAP" : {
-      "26" : {
+    "CIDRMAP":{
+      "26":{
+        "1"         : "6",
         "2"         : "5",
         "4"         : "4",
         "8"         : "3"
       },
-      "25" : {
+      "25":{
+        "1"         : "7",
         "2"         : "6",
         "4"         : "5",
         "8"         : "4"
       },
-      "24" : {
+      "24":{
+        "1"         : "8",
         "2"         : "7",
         "4"         : "6",
         "8"         : "5"
       },
-      "23" : {
+      "23":{
+        "1"         : "9",
         "2"         : "8",
         "4"         : "7",
         "8"         : "6"
       },
-      "22" : {
+      "22":{
+        "1"         : "10",
         "2"         : "9",
         "4"         : "8",
         "8"         : "7"
       }
     }
   },
-  "Conditions": {
+  "Conditions":{
     "BuildSpot":{
       "Fn::Equals":[{"Ref":"SPOT"},"YES"]
     },
     "BuildNETUTILA":{
-      "Fn::Or": [
+      "Fn::Or":[
         {"Fn::Equals":[{"Ref":"NETUTILA"},"YES"]},
         {"Fn::Equals":[{"Ref":"NETUTILA"},"DEFAULT"]}
       ]      
     },
     "BuildNETUTILAeip":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILA"},"YES"]},
-        {"Fn::Equals":[{"Ref":"NETUTILA"},"DEFAULT"]}
-      ]      
+      "Fn::And":[
+        {"Condition":"BuildNETUTILA"},
+        {"Fn::Equals":[{"Ref":"ElasticIP"},"YES"]},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
+      ]
     },
     "BuildNETUTILB":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILB"},"YES"]},
-        {"Fn::Equals":[{"Ref":"NETUTILB"},"DEFAULT"]}
+      "Fn::And":[
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"NETUTILB"},"YES"]},
+          {"Fn::And":[
+            {"Fn::Equals":[{"Ref":"NETUTILB"},"DEFAULT"]},
+            {"Fn::Or":[
+              {"Fn::Equals":[{"Ref":"CountAZ"},"2"]},
+              {"Fn::Equals":[{"Ref":"CountAZ"},"3"]},
+              {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+            ]}
+          ]}
+        ]},
+        {"Condition":"Build2"}
       ]
     },
     "BuildNETUTILBeip":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILB"},"YES"]},
-        {"Fn::Equals":[{"Ref":"NETUTILB"},"DEFAULT"]}
+      "Fn::And":[
+        {"Condition":"BuildNETUTILB"},
+        {"Fn::Equals":[{"Ref":"ElasticIP"},"YES"]},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
       ]
     },
     "BuildNETUTILC":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILC"},"YES"]},
-        "Fn::And": [
-          {"Fn::Equals":[{"Ref":"NETUTILC"},"DEFAULT"]},
-          "Fn::Or": [
-            {"Fn::Equals":[{"Ref":"CountAZ"},"3"]},
-            {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
-          ]
-        ]
+      "Fn::And":[
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"NETUTILC"},"YES"]},
+          {"Fn::And":[
+            {"Fn::Equals":[{"Ref":"NETUTILC"},"DEFAULT"]},
+            {"Fn::Or":[
+              {"Fn::Equals":[{"Ref":"CountAZ"},"3"]},
+              {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+            ]}
+          ]}
+        ]},
+        {"Condition":"Build3"}
       ]
     },
     "BuildNETUTILCeip":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILC"},"YES"]},
-        {"Fn::Equals":[{"Ref":"NETUTILC"},"DEFAULT"]}
+      "Fn::And":[
+        {"Condition":"BuildNETUTILC"},
+        {"Fn::Equals":[{"Ref":"ElasticIP"},"YES"]},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
       ]
     },
     "BuildNETUTILD":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILD"},"YES"]},
-        "Fn::And": [
-          {"Fn::Equals":[{"Ref":"NETUTILC"},"DEFAULT"]},
-          {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
-        ]
+      "Fn::And":[
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"NETUTILD"},"YES"]},
+          {"Fn::And":[
+            {"Fn::Equals":[{"Ref":"NETUTILD"},"DEFAULT"]},
+            {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+          ]}
+        ]},
+        {"Condition":"Build4"}
       ]
     },
     "BuildNETUTILDeip":{
-      "Fn::Or": [
-        {"Fn::Equals":[{"Ref":"NETUTILD"},"YES"]},
-        {"Fn::Equals":[{"Ref":"NETUTILD"},"DEFAULT"]}
+      "Fn::And":[
+        {"Condition":"BuildNETUTILD"},
+        {"Fn::Equals":[{"Ref":"ElasticIP"},"YES"]},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
       ]
     },
     "Build2":{
-      "Fn::Equals":[{"Ref":"SubnetCount"},"2"]
-    },
-    "Build4":{
-      "Fn::Or": [
+      "Fn::Or":[
+        {"Fn::Equals":[{"Ref":"SubnetCount"},"2"]},
         {"Fn::Equals":[{"Ref":"SubnetCount"},"4"]},
         {"Fn::Equals":[{"Ref":"SubnetCount"},"8"]}
       ]
     },
-    "Build8":{
+    "Build3":{
+      "Fn::Or":[
+        {"Fn::Equals":[{"Ref":"SubnetCount"},"4"]},
+        {"Fn::Equals":[{"Ref":"SubnetCount"},"8"]}
+      ]
+    },
+    "Build4":{
+      "Fn::And":[
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"SubnetCount"},"4"]},
+          {"Fn::Equals":[{"Ref":"SubnetCount"},"8"]}
+        ]},
+        {"Fn::Not":[{"Fn::Equals":[{"Ref":"CountAZ"},"3"]}]}
+      ]
+    },
+    "Build7":{
       "Fn::Equals":[{"Ref":"SubnetCount"},"8"]
+    },
+    "Build8":{
+      "Fn::And":[
+        {"Fn::Equals":[{"Ref":"SubnetCount"},"8"]},
+        {"Fn::Not":[{"Fn::Equals":[{"Ref":"CountAZ"},"3"]}]}
+      ]
     },
     "TagSTNO":{
       "Fn::Equals":[{"Ref":"Routing"},"STNO"]
     },
+    "TagSTNO2":{
+      "Fn::And":[
+        {"Fn::Equals":[{"Ref":"Routing"},"STNO"]},
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"CountAZ"},"2"]},
+          {"Fn::Equals":[{"Ref":"CountAZ"},"3"]},
+          {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+        ]}
+      ]
+    },
+    "TagSTNO3":{
+      "Fn::And":[
+        {"Fn::Equals":[{"Ref":"Routing"},"STNO"]},
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"CountAZ"},"3"]},
+          {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+        ]}
+      ]
+    },
+    "TagSTNO4":{
+      "Fn::And":[
+        {"Fn::Equals":[{"Ref":"Routing"},"STNO"]},
+        {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+      ]
+    },
     "MakeIGW":{
       "Fn::Equals":[{"Ref":"Routing"},"IGW"]
     },
+    "MakeIGW2":{
+      "Fn::And":[
+        {"Condition":"Build2"},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
+      ]
+    },
+    "MakeIGW3":{
+      "Fn::And":[
+        {"Condition":"Build3"},
+        {"Fn::Or":[
+          {"Fn::Equals":[{"Ref":"CountAZ"},"3"]},
+          {"Fn::Equals":[{"Ref":"CountAZ"},"4"]}
+        ]},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
+      ]
+    },
+    "MakeIGW4":{
+      "Fn::And":[
+        {"Condition":"Build4"},
+        {"Fn::Equals":[{"Ref":"CountAZ"},"4"]},
+        {"Fn::Equals":[{"Ref":"Routing"},"IGW"]}
+      ]
+    },
     "NotMakeIGW":{
-      "Fn::Not": [{"Fn::Equals":[{"Ref":"Routing"},"IGW"]}]
+      "Fn::Not":[{"Condition":"MakeIGW"}]
+    },
+    "MakeSubnet2RT":{
+      "Fn::And":[
+        {"Condition":"Build2"},
+        {"Fn::Not":[{"Condition":"MakeIGW2"}]}
+      ]
+    },
+    "MakeSubnet3RT":{
+      "Fn::And":[
+        {"Condition":"Build3"},
+        {"Fn::Not":[{"Condition":"MakeIGW3"}]}
+      ]
+    },
+    "MakeSubnet4RT":{
+      "Fn::And":[
+        {"Condition":"Build4"},
+        {"Fn::Not":[{"Condition":"MakeIGW4"}]}
+      ]
     }
   },
-  "Resources": {
-    "VPC1": {
-      "Type": "AWS::EC2::VPC",
-      "Properties": {
-        "CidrBlock": {"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},
-        "Tags": [
-          {"Key": "Name"           ,"Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" } ]]}},
+  "Resources":{
+    "VPC":{
+      "Type":"AWS::EC2::VPC",
+      "Properties":{
+        "CidrBlock":{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},
+        "Tags":[
+          {"Key":"Name"           ,"Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"}]]}},
           {"Fn::If":["TagSTNO",
-            {"Key": "Associate-with" ,"Value": {"Fn::FindInMap" : [ "Mapping01", {"Ref":"AWS::Region"}, "Associatewith"]}},
-            {"Ref": "AWS::NoValue"}
+            {"Key":"Associate-with" ,"Value":{"Fn::FindInMap":["Mapping01",{"Ref":"AWS::Region"},"Associatewith"]}},
+            {"Ref":"AWS::NoValue"}
           ]},
           {"Fn::If":["TagSTNO",
-            {"Key": "Propagate-to"   ,"Value": {"Fn::FindInMap" : [ "Mapping01", {"Ref":"AWS::Region"}, "Propagateto"]}},
-            {"Ref": "AWS::NoValue"}
+            {"Key":"Propagate-to"   ,"Value":{"Fn::FindInMap":["Mapping01",{"Ref":"AWS::Region"},"Propagateto"]}},
+            {"Ref":"AWS::NoValue"}
           ]}
         ]
       }
     },
-    "Subnet0": {
-      "Type": "AWS::EC2::Subnet",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[0,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet0"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet0-Name",{"Ref":"Routing"}]} ]} ]]}},
+    "Subnet1":{
+      "Type":"AWS::EC2::Subnet",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[0,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet1",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet1",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}},
           {"Fn::If":["TagSTNO",
-            {"Key": "Attach-to-tgw","Value": ""},
-            {"Ref": "AWS::NoValue"}
+            {"Key":"Attach-to-tgw","Value":""},
+            {"Ref":"AWS::NoValue"}
           ]}
         ]
       }
     },
-    "Subnet1": {
-      "Type": "AWS::EC2::Subnet",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[1,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet1"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet1-Name",{"Ref":"Routing"}]} ]} ]]}},
-          {"Fn::If":["TagSTNO",
-            {"Key": "Attach-to-tgw","Value": ""},
-            {"Ref": "AWS::NoValue"}
+    "Subnet2":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build2",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[1,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet2",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet2",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}},
+          {"Fn::If":["TagSTNO2",
+            {"Key":"Attach-to-tgw","Value":""},
+            {"Ref":"AWS::NoValue"}
           ]}
         ]
       }
     },
-    "Subnet2": {
-      "Type": "AWS::EC2::Subnet",
-      "Condition": "Build4",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet2"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet2-Name",{"Ref":"Routing"}]} ]} ]]}}
+    "Subnet3":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build3",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet3",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet3",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}},
+          {"Fn::If":["TagSTNO3",
+            {"Key":"Attach-to-tgw","Value":""},
+            {"Ref":"AWS::NoValue"}
+          ]}
         ]  
       }
     },
-    "Subnet3": {
-      "Type": "AWS::EC2::Subnet",
-      "Condition": "Build4",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[3,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet3"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet3-Name",{"Ref":"Routing"}]} ]} ]]}}
+    "Subnet4":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build4",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[3,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet4",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet4",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}},
+          {"Fn::If":["TagSTNO4",
+            {"Key":"Attach-to-tgw","Value":""},
+            {"Ref":"AWS::NoValue"}
+          ]}
         ]  
       }
     },
-    "Subnet4": {
-      "Type": "AWS::EC2::Subnet",
-      "Condition": "Build8",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[4,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet4"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet4-Name",{"Ref":"Routing"}]} ]} ]]}}
+    "Subnet5":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build7",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[4,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet5",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet5",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}}
         ]  
       }
     },
-    "Subnet5": {
-      "Type": "AWS::EC2::Subnet",
-      "Condition": "Build8",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[5,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet5"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet5-Name",{"Ref":"Routing"}]} ]} ]]}}
+    "Subnet6":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build7",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[5,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet6",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet6",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}}
         ]  
       }
     },
-    "Subnet6": {
-      "Type": "AWS::EC2::Subnet",
-      "Condition": "Build8",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[6,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet6"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet6-Name",{"Ref":"Routing"}]} ]} ]]}}
+    "Subnet7":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build7",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[6,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet7",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet7",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}}
         ]  
       }
     },
-    "Subnet7": {
-      "Type": "AWS::EC2::Subnet",
-      "Condition": "Build8",
-      "Properties": {
-        "VpcId": { "Ref": "VPC1" },
-        "CidrBlock": {"Fn::Select":[7,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},
-        "AvailabilityZone": {"Fn::Select": [{"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} ,"Subnet7"]},{ "Fn::GetAZs": { "Ref": "AWS::Region" }}]},
-        "Tags": [
-          {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, {"Fn::FindInMap" : [ "Mapping01", {"Fn::Join":["-",{"Ref":"CountAZ"},"AZ"]} , {"Fn::Join":["-","Subnet7-Name",{"Ref":"Routing"}]} ]} ]]}}
+    "Subnet8":{
+      "Type":"AWS::EC2::Subnet",
+      "Condition":"Build8",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "CidrBlock":{"Fn::Select":[7,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},
+        "AvailabilityZone":{"Fn::Select":[{"Fn::FindInMap":["Mapping01","Subnet8",{"Fn::Join":["",[{"Ref":"CountAZ"},"az"]]}]},{"Fn::GetAZs":{"Ref":"AWS::Region"}}]},
+        "Tags":[
+          {"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},{"Fn::FindInMap":["Mapping01","Subnet8",{"Fn::Join":["",[{"Ref":"CountAZ"},"azName",{"Ref":"Routing"}]]}]}]]}}
         ]  
       }
     },
-    "PrivateRouteTable" : {
-      "Type" : "AWS::EC2::RouteTable",
-      "Properties" : {
-        "VpcId" : { "Ref": "VPC1" },
-        "Tags" : [ {"Key": "Name","Value": {"Fn::Join":["",[{ "Ref": "VPCName" }, "-", { "Ref": "Environment" }, "-RT" ]]}} ]
+    "PrivateRouteTable":{
+      "Type":"AWS::EC2::RouteTable",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "Tags":[{"Key":"Name","Value":{"Fn::Join":["",[{"Ref":"VPCName"},"-",{"Ref":"Environment"},"-RT"]]}}]
       }
     },
-    "Subnet0RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "NotMakeIGW",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet0" }
+    "Subnet1RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"NotMakeIGW",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet1"}
       }
     },
-    "Subnet1RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "NotMakeIGW",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet1" }
+    "Subnet2RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeSubnet2RT",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet2"}
       }
     },
-    "Subnet2RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "Build4",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet2" }
+    "Subnet3RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeSubnet3RT",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet3"}
       }
     },
-    "Subnet3RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "Build4",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet3" }
+    "Subnet4RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeSubnet4RT",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet4"}
       }
     },
-    "Subnet4RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "Build8",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet4" }
+    "Subnet5RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"Build8",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet5"}
       }
     },
-    "Subnet5RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "Build8",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet5" }
+    "Subnet6RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"Build8",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet6"}
       }
     },
-    "Subnet6RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "Build8",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet6" }
+    "Subnet7RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"Build8",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet7"}
       }
     },
-    "Subnet7RT" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "Build8",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PrivateRouteTable" },
-        "SubnetId" : { "Ref": "Subnet7" }
+    "Subnet8RT":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"Build8",
+      "Properties":{
+        "RouteTableId":{"Ref":"PrivateRouteTable"},
+        "SubnetId":{"Ref":"Subnet8"}
       }
     },
-    "launchTemplate": {
-      "Type": "AWS::EC2::LaunchTemplate",
-      "Properties": {
-        "LaunchTemplateData": {
-          "InstanceMarketOptions": {"Fn::If":["BuildSpot",{"MarketType": "spot"},{"Ref": "AWS::NoValue"}]},
-          "ImageId"              : {"Fn::FindInMap" : [ "Mapping01", {"Ref":"AWS::Region"}, "ImageId" ]},
-          "InstanceType"         : {"Fn::FindInMap" : [ "Mapping01", "Common", "InstanceType" ]},
-          "SecurityGroupIds"     :[{"Ref":"NETWORKUTILSECG"} ],
-          "KeyName"              : {"Ref":"KeyNameParameter" },
-          "UserData"             : {"Fn::FindInMap" : [ "Mapping01", "Common", "UserData" ]},
-          "BlockDeviceMappings"  : [{
-            "DeviceName" : "/dev/sda1",
-            "Ebs" : {
+    "launchTemplate":{
+      "Type":"AWS::EC2::LaunchTemplate",
+      "Properties":{
+        "LaunchTemplateData":{
+          "InstanceMarketOptions":{"Fn::If":["BuildSpot",{"MarketType":"spot","SpotOptions":{"InstanceInterruptionBehavior":"stop","SpotInstanceType":"persistent"}},{"Ref":"AWS::NoValue"}]},
+          "ImageId"              : {"Fn::FindInMap":["Mapping01",{"Ref":"AWS::Region"},"ImageId"]},
+          "InstanceType"         : {"Fn::FindInMap":["Mapping01","Common","InstanceType"]},
+          "SecurityGroupIds"     :[{"Ref":"NETWORKUTILSECG"}],
+          "KeyName"              : {"Ref":"KeyNameParameter"},
+          "UserData"             : {"Fn::FindInMap":["Mapping01","Common","UserData"]},
+          "BlockDeviceMappings"  :[{
+            "DeviceName":"/dev/sda1",
+            "Ebs":{
               "VolumeType"          : "gp3",
-              "DeleteOnTermination" : "true",
+              "DeleteOnTermination":"true",
               "VolumeSize"          : 20
             }
           }],
-          "TagSpecifications": [{"ResourceType": "instance","Tags": [
-            { "Key": "LOB Owner"            , "Value": "NETWORK ENGINEERING GROUP"},
-            { "Key": "Application"          , "Value": "NPM"},
-            { "Key": "ApplicationTier"      , "Value": "App"},
-            { "Key": "EnvironmentTier"      , "Value": "NONPROD"},
-            { "Key": "BACKUPTYPE"           , "Value": "NONPROD-0000"},
-            { "Key": "Branch\\Agency Owner" , "Value": "ENTERPRISE"},
-            { "Key": "Operating Systems"    , "Value": "Linux"}
+          "TagSpecifications":[{"ResourceType":"instance","Tags":[
+            {"Key":"LOB Owner"            ,"Value":"NETWORK ENGINEERING GROUP"},
+            {"Key":"Application"          ,"Value":"NPM"},
+            {"Key":"ApplicationTier"      ,"Value":"App"},
+            {"Key":"EnvironmentTier"      ,"Value":"NONPROD"},
+            {"Key":"BACKUPTYPE"           ,"Value":"NONPROD-0000"},
+            {"Key":"Branch\\Agency Owner" ,"Value":"ENTERPRISE"},
+            {"Key":"Operating Systems"    ,"Value":"Linux"}
           ]}]
         }
       }
     },
-    "NETUTILA" : {
-      "Type" : "AWS::EC2::Instance",
-      "Condition": "BuildNETUTILA",
-      "Properties" : {
-        "LaunchTemplate"      : {"LaunchTemplateId": {"Ref": "launchTemplate"},"Version":1},
-        "PrivateIpAddress"    : {"Fn::Select":[0,{ "Fn::Split" : [ "/",{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Select":[0,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},5,1]}]}]}]},
-        "SubnetId"            : {"Ref":"Subnet0"},
-        "Tags" : [
-          { "Key" : "Name"                 , "Value" : {"Fn::Join":["",[{ "Ref": "VPCName" },{ "Ref": "Environment" }, "NUA" ]]} }
-        ]
-      }
-    },
-    "NETUTILAEIP" : {
-      "Type" : "AWS::EC2::EIP",
-      "Properties" : {
-        "InstanceId" : { "Ref" : "NETUTILA" },
-        "Tags" : [
-          { "Key" : "Name"                 , "Value" : {"Fn::Join":["",[{ "Ref": "VPCName" },{ "Ref": "Environment" }, "NUA-EIP" ]]} }
-        ]
-      }
-    },
-    "NETUTILB" : {
-      "Type" : "AWS::EC2::Instance",
-      "Condition": "BuildNETUTILB",
-      "Properties" : {
-        "LaunchTemplate"      : {"LaunchTemplateId": {"Ref": "launchTemplate"},"Version":1},
-        "PrivateIpAddress"    : {"Fn::Select":[0,{ "Fn::Split" : [ "/",{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Select":[1,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap" : [ "CIDRMAP", {"Ref":"SupernetCIDR"}, {"Ref":"SubnetCount"} ]}]}]},5,1]}]}]}]},
+    "InstNETUTILA":{
+      "Type":"AWS::EC2::Instance",
+      "Condition":"BuildNETUTILA",
+      "Properties":{
+        "LaunchTemplate"      : {"LaunchTemplateId":{"Ref":"launchTemplate"},"Version":1},
+        "PrivateIpAddress"    : {"Fn::Select":[0,{"Fn::Split":["/",{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Select":[0,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},5,1]}]}]}]},
         "SubnetId"            : {"Ref":"Subnet1"},
-        "Tags" : [
-          { "Key" : "Name"                 , "Value" : {"Fn::Join":["",[{ "Ref": "VPCName" },{ "Ref": "Environment" }, "NUB" ]]} }
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUA"]]} }
         ]
       }
     },
-    "NETUTILBEIP" : {
-      "Type" : "AWS::EC2::EIP",
-      "Properties" : {
-        "InstanceId" : { "Ref" : "NETUTILB" },
-        "Tags" : [
-          { "Key" : "Name"                 , "Value" : {"Fn::Join":["",[{ "Ref": "VPCName" },{ "Ref": "Environment" }, "NUB-EIP" ]]} }
+    "InstNETUTILB":{
+      "Type":"AWS::EC2::Instance",
+      "Condition":"BuildNETUTILB",
+      "Properties":{
+        "LaunchTemplate"      : {"LaunchTemplateId":{"Ref":"launchTemplate"},"Version":1},
+        "PrivateIpAddress"    : {"Fn::Select":[0,{"Fn::Split":["/",{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Select":[1,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},5,1]}]}]}]},
+        "SubnetId"            : {"Ref":"Subnet2"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUB"]]} }
         ]
       }
     },
-    "NETWORKUTILSECG" : {
-      "Type" : "AWS::EC2::SecurityGroup",
-      "Properties" : {
-        "GroupDescription" : {"Fn::Join":[".",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, "NETWORKUTIL.SECG"]]},
-        "VpcId" : {"Ref" : "VPC1"},
-        "SecurityGroupIngress" : [
-          { "IpProtocol": "icmp", "FromPort": 8,   "ToPort": -1,  "CidrIp": "0.0.0.0/0",      "Description": "Allow ping"              },
-          { "IpProtocol": "tcp",  "FromPort": 22,  "ToPort": 22,  "CidrIp": "0.0.0.0/0",      "Description": "Allow SSH"               },
-          { "IpProtocol": "tcp",  "FromPort": 5200,"ToPort": 5210,"CidrIp": "10.0.0.0/8",     "Description": "Allow iperf RFC1918-10"  },
-          { "IpProtocol": "tcp",  "FromPort": 5200,"ToPort": 5210,"CidrIp": "172.16.0.0/12",  "Description": "Allow iperf RFC1918-172" },
-          { "IpProtocol": "tcp",  "FromPort": 5200,"ToPort": 5210,"CidrIp": "192.168.0.0/16", "Description": "Allow iperf RFC1918-192" }
-        ],
-        "Tags": [{"Key": "Name","Value": {"Fn::Join":[".",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, "NETWORKUTIL.SECG"]]}}]
-      }
-    },
-    "RDSSubnetGroupA": {
-      "Condition": "Build2",
-      "Type": "AWS::RDS::DBSubnetGroup",
-      "Properties": {
-        "DBSubnetGroupDescription": {"Fn::Join":[" ",["Default PaaS DB Tier for",{ "Ref": "Environment" },{ "Ref": "VPCName" },"VPC."]]},
-        "SubnetIds": [
-          {"Ref":"Subnet0"},
-          {"Ref":"Subnet1"}
-        ],
-        "Tags": [
-            {"Key": "String","Value": "String"}
+    "InstNETUTILC":{
+      "Type":"AWS::EC2::Instance",
+      "Condition":"BuildNETUTILC",
+      "Properties":{
+        "LaunchTemplate"      : {"LaunchTemplateId":{"Ref":"launchTemplate"},"Version":1},
+        "PrivateIpAddress"    : {"Fn::Select":[0,{"Fn::Split":["/",{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},5,1]}]}]}]},
+        "SubnetId"            : {"Ref":"Subnet3"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUC"]]} }
         ]
       }
     },
-    "RDSSubnetGroupB": {
-      "Condition": "Build4",
-      "Type": "AWS::RDS::DBSubnetGroup",
-      "Properties": {
-        "DBSubnetGroupDescription": {"Fn::Join":[" ",["Default PaaS DB Tier for",{ "Ref": "Environment" },{ "Ref": "VPCName" },"VPC."]]},
-        "SubnetIds": [
-          {"Ref":"Subnet2"},
-          {"Ref":"Subnet3"}
-        ],
-        "Tags": [
-            {"Key": "String","Value": "String"}
+    "InstNETUTILD":{
+      "Type":"AWS::EC2::Instance",
+      "Condition":"BuildNETUTILD",
+      "Properties":{
+        "LaunchTemplate"      : {"LaunchTemplateId":{"Ref":"launchTemplate"},"Version":1},
+        "PrivateIpAddress"    : {"Fn::Select":[0,{"Fn::Split":["/",{"Fn::Select":[2,{"Fn::Cidr":[{"Fn::Select":[3,{"Fn::Cidr":[{"Fn::Join":["/",[{"Ref":"SupernetID"},{"Ref":"SupernetCIDR"}]]},{"Ref":"SubnetCount"},{"Fn::FindInMap":["CIDRMAP",{"Ref":"SupernetCIDR"},{"Ref":"SubnetCount"}]}]}]},5,1]}]}]}]},
+        "SubnetId"            : {"Ref":"Subnet4"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUD"]]} }
         ]
       }
     },
-    "RDSSubnetGroup": {
-      "Condition": "Build8",
-      "Type": "AWS::RDS::DBSubnetGroup",
-      "Properties": {
-        "DBSubnetGroupDescription": {"Fn::Join":[" ",["Default PaaS DB Tier for",{ "Ref": "Environment" },{ "Ref": "VPCName" },"VPC."]]},
-        "SubnetIds": [
-          {"Ref":"Subnet4"},
-          {"Ref":"Subnet5"}
-        ],
-        "Tags": [
-          {"Key": "String","Value": "String"}
-      ]
+    "NETUTILAEIP":{
+      "Type":"AWS::EC2::EIP",
+      "Condition":"BuildNETUTILAeip",
+      "Properties":{
+        "InstanceId":{"Ref":"InstNETUTILA"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUA-EIP"]]} }
+        ]
       }
     },
-    "FLOWLOGGROUP": {
-      "Type": "AWS::Logs::LogGroup",
-      "Properties": {
+    "NETUTILBEIP":{
+      "Type":"AWS::EC2::EIP",
+      "Condition":"BuildNETUTILBeip",
+      "Properties":{
+        "InstanceId":{"Ref":"InstNETUTILB"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUB-EIP"]]} }
+        ]
+      }
+    },
+    "NETUTILCEIP":{
+      "Type":"AWS::EC2::EIP",
+      "Condition":"BuildNETUTILCeip",
+      "Properties":{
+        "InstanceId":{"Ref":"InstNETUTILC"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUC-EIP"]]} }
+        ]
+      }
+    },
+    "NETUTILDEIP":{
+      "Type":"AWS::EC2::EIP",
+      "Condition":"BuildNETUTILDeip",
+      "Properties":{
+        "InstanceId":{"Ref":"InstNETUTILD"},
+        "Tags":[
+          {"Key":"Name"                 ,"Value":{"Fn::Join":["",[{"Ref":"VPCName"},{"Ref":"Environment"},"NUD-EIP"]]} }
+        ]
+      }
+    },
+    "NETWORKUTILSECG":{
+      "Type":"AWS::EC2::SecurityGroup",
+      "Properties":{
+        "GroupDescription":{"Fn::Join":[".",[{"Ref":"VPCName"},{"Ref":"Environment"},"NETWORKUTIL.SECG"]]},
+        "VpcId":{"Ref":"VPC"},
+        "SecurityGroupIngress":[
+          {"IpProtocol":"icmp","FromPort": 8,   "ToPort": -1,  "CidrIp":"0.0.0.0/0",      "Description":"Allow ping"              },
+          {"IpProtocol":"tcp",  "FromPort": 22,  "ToPort": 22,  "CidrIp":"0.0.0.0/0",      "Description":"Allow SSH"               },
+          {"IpProtocol":"tcp",  "FromPort": 5200,"ToPort": 5210,"CidrIp":"10.0.0.0/8",     "Description":"Allow iperf RFC1918-10"  },
+          {"IpProtocol":"tcp",  "FromPort": 5200,"ToPort": 5210,"CidrIp":"172.16.0.0/12",  "Description":"Allow iperf RFC1918-172"},
+          {"IpProtocol":"tcp",  "FromPort": 5200,"ToPort": 5210,"CidrIp":"192.168.0.0/16","Description":"Allow iperf RFC1918-192"}
+        ],
+        "Tags":[{"Key":"Name","Value":{"Fn::Join":[".",[{"Ref":"VPCName"},{"Ref":"Environment"},"NETWORKUTIL.SECG"]]}}]
+      }
+    },
+    "FLOWLOGGROUP":{
+      "Type":"AWS::Logs::LogGroup",
+      "Properties":{
           "RetentionInDays": 14
       }
     },
-    "FlowLogRole": {
-      "Type": "AWS::IAM::Role",
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Version": "2012-10-17",
-          "Statement": [
+    "FlowLogRole":{
+      "Type":"AWS::IAM::Role",
+      "Properties":{
+        "AssumeRolePolicyDocument":{
+          "Version":"2012-10-17",
+          "Statement":[
             {
-              "Effect": "Allow",
-              "Principal": {"Service": "vpc-flow-logs.amazonaws.com"},
-              "Action": "sts:AssumeRole"
+              "Effect":"Allow",
+              "Principal":{"Service":"vpc-flow-logs.amazonaws.com"},
+              "Action":"sts:AssumeRole"
             }
           ]
         },
-        "Policies": [
+        "Policies":[
           {
-            "PolicyName": "flowlogs-policy",
-            "PolicyDocument": {
-              "Version": "2012-10-17",
-              "Statement": [
+            "PolicyName":"flowlogs-policy",
+            "PolicyDocument":{
+              "Version":"2012-10-17",
+              "Statement":[
                 {
-                  "Effect": "Allow",
-                  "Action": [
+                  "Effect":"Allow",
+                  "Action":[
                     "logs:CreateLogStream",
                     "logs:PutLogEvents",
                     "logs:DescribeLogGroups",
                     "logs:DescribeLogStreams"
                   ],
-                  "Resource": {"Fn::GetAtt": ["FLOWLOGGROUP","Arn"]}
+                  "Resource":{"Fn::GetAtt":["FLOWLOGGROUP","Arn"]}
                 }
               ]
             }
@@ -713,64 +891,80 @@
         ]
       }
     },
-    "FLOWLOG": {
-      "Type": "AWS::EC2::FlowLog",
-      "Properties": {
-        "DeliverLogsPermissionArn": {"Fn::GetAtt": ["FlowLogRole","Arn"]},
-        "LogGroupName": {"Ref":"FLOWLOGGROUP"},
-        "ResourceId": {"Ref": "VPC1"},
-        "ResourceType": "VPC",
+    "FLOWLOG":{
+      "Type":"AWS::EC2::FlowLog",
+      "Properties":{
+        "DeliverLogsPermissionArn":{"Fn::GetAtt":["FlowLogRole","Arn"]},
+        "LogGroupName":{"Ref":"FLOWLOGGROUP"},
+        "ResourceId":{"Ref":"VPC"},
+        "ResourceType":"VPC",
         "MaxAggregationInterval" : 60,
-        "TrafficType": "ALL"
+        "TrafficType":"ALL"
       }
     },
-    "PublicRouteTable" : {
-      "Condition": "MakeIGW",
-      "Type" : "AWS::EC2::RouteTable",
-      "Properties" : {
-        "VpcId" : { "Ref": "VPC1" },
-        "Tags" : [ {"Key": "Name","Value": {"Fn::Join":["-",[{ "Ref": "VPCName" }, { "Ref": "Environment" }, "IGW", "RT" ]]}} ]
+    "IGW":{
+      "Condition":"MakeIGW",
+      "Type":"AWS::EC2::InternetGateway",
+      "Properties":{
+        "Tags":[{"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},"IGW"]]}}]
       }
     },
-    "RouteIGW" : {
-      "Condition": "MakeIGW",
-      "Type" : "AWS::EC2::Route",
-      "DependsOn" : "AttachIGW",
-      "Properties" : {
-        "RouteTableId" : { "Ref" : "PublicRouteTable" },
-        "DestinationCidrBlock" : "0.0.0.0/0",
-        "GatewayId" : { "Ref" : "IGW" }
+    "RouteTableIGW":{
+      "Condition":"MakeIGW",
+      "Type":"AWS::EC2::RouteTable",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "Tags":[{"Key":"Name","Value":{"Fn::Join":["-",[{"Ref":"VPCName"},{"Ref":"Environment"},"IGW","RT"]]}}]
       }
     },
-    "Subnet0RTIGW" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "MakeIGW",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PublicRouteTable" },
-        "SubnetId" : { "Ref": "Subnet0" }
+    "AttachIGW":{
+      "Condition":"MakeIGW",
+      "Type":"AWS::EC2::VPCGatewayAttachment",
+      "Properties":{
+        "VpcId":{"Ref":"VPC"},
+        "InternetGatewayId":{"Ref":"IGW"}
       }
     },
-    "Subnet1RTIGW" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
-      "Condition": "MakeIGW",
-      "Properties" : {
-        "RouteTableId" : { "Ref": "PublicRouteTable" },
-        "SubnetId" : { "Ref": "Subnet1" }
+    "RouteIGW":{
+      "Condition":"MakeIGW",
+      "Type":"AWS::EC2::Route",
+      "DependsOn":"AttachIGW",
+      "Properties":{
+        "RouteTableId":{"Ref":"RouteTableIGW"},
+        "DestinationCidrBlock":"0.0.0.0/0",
+        "GatewayId":{"Ref":"IGW"}
       }
     },
-    "AttachIGW" : {
-      "Condition": "MakeIGW",
-      "Type" : "AWS::EC2::VPCGatewayAttachment",
-      "Properties" : {
-        "VpcId" : { "Ref" : "VPC1" },
-        "InternetGatewayId" : { "Ref" : "IGW" }
+    "Subnet1RTIGW":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeIGW",
+      "Properties":{
+        "RouteTableId":{"Ref":"RouteTableIGW"},
+        "SubnetId":{"Ref":"Subnet1"}
       }
     },
-    "IGW" : {
-      "Condition": "MakeIGW",
-      "Type" : "AWS::EC2::InternetGateway",
-      "Properties" : {
-        "Tags" : [ {"Key" : "Name", "Value" : {"Fn::Join":["-",[{ "Ref": "VPCName" },{ "Ref": "Environment" },"IGW" ]]}}]
+    "Subnet2RTIGW":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeIGW2",
+      "Properties":{
+        "RouteTableId":{"Ref":"RouteTableIGW"},
+        "SubnetId":{"Ref":"Subnet2"}
+      }
+    },
+    "Subnet3RTIGW":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeIGW3",
+      "Properties":{
+        "RouteTableId":{"Ref":"RouteTableIGW"},
+        "SubnetId":{"Ref":"Subnet3"}
+      }
+    },
+    "Subnet4RTIGW":{
+      "Type":"AWS::EC2::SubnetRouteTableAssociation",
+      "Condition":"MakeIGW4",
+      "Properties":{
+        "RouteTableId":{"Ref":"RouteTableIGW"},
+        "SubnetId":{"Ref":"Subnet4"}
       }
     }
   }
